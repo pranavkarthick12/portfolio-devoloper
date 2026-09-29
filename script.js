@@ -890,6 +890,101 @@
   }
 
 
+  /* ---- Spline Watermark & Branding Neutralizer ----
+     Spline renders its "Built with Spline" watermark badge directly onto
+     the canvas via WebGPU/WebGL postprocessing pipeline overlay passes
+     (watermarkTexture / logoOverlayPass). We intercept the runtime's
+     pipeline creation, asset manager, and render loop to ensure the
+     watermark texture is never loaded or rendered. */
+  const neutralizePipeline = (pipeline) => {
+    if (!pipeline) return;
+    pipeline.watermarkTexture = null;
+    pipeline._chainWatermark = null;
+    pipeline._effectChainDirty = true;
+    if (pipeline.logoOverlayPass) {
+      pipeline.logoOverlayPass.enabled = false;
+      try {
+        Object.defineProperty(pipeline.logoOverlayPass, 'enabled', {
+          get: () => false,
+          set: () => {},
+          configurable: true
+        });
+      } catch (_) {}
+    }
+    pipeline.setWatermark = function() {
+      this.watermarkTexture = null;
+      this._chainWatermark = null;
+      if (this.logoOverlayPass) this.logoOverlayPass.enabled = false;
+    };
+  };
+
+  const sanitizeSplineRuntime = (Application) => {
+    if (!Application || Application._watermarkSanitized) return;
+    Application._watermarkSanitized = true;
+
+    const origCreateRenderer = Application.prototype._createRenderer;
+    if (origCreateRenderer) {
+      Application.prototype._createRenderer = async function(...args) {
+        const renderer = await origCreateRenderer.apply(this, args);
+        if (renderer && renderer.pipeline) {
+          neutralizePipeline(renderer.pipeline);
+        }
+        return renderer;
+      };
+    }
+
+    const origStart = Application.prototype.start;
+    if (origStart) {
+      Application.prototype.start = async function(...args) {
+        if (this._data && this._data.shared && this._data.shared.images) {
+          delete this._data.shared.images.SplineWatermark;
+        }
+        const res = await origStart.apply(this, args);
+        if (this._renderer && this._renderer.pipeline) {
+          neutralizePipeline(this._renderer.pipeline);
+        }
+        return res;
+      };
+    }
+
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(Application.prototype, '_data');
+      let currentData = new WeakMap();
+      Object.defineProperty(Application.prototype, '_data', {
+        get() {
+          if (descriptor && descriptor.get) return descriptor.get.call(this);
+          return currentData.get(this);
+        },
+        set(val) {
+          if (val && val.shared && val.shared.images && val.shared.images.SplineWatermark) {
+            delete val.shared.images.SplineWatermark;
+          }
+          if (descriptor && descriptor.set) {
+            descriptor.set.call(this, val);
+          } else {
+            currentData.set(this, val);
+          }
+        },
+        configurable: true,
+        enumerable: true
+      });
+    } catch (_) {}
+  };
+
+  const neutralizeAppWatermark = (app) => {
+    if (!app) return;
+    if (app._data && app._data.shared && app._data.shared.images) {
+      delete app._data.shared.images.SplineWatermark;
+    }
+    const pipeline = app._renderer && app._renderer.pipeline;
+    if (pipeline) {
+      neutralizePipeline(pipeline);
+    }
+    if (typeof app.requestRender === 'function') {
+      app.requestRender();
+    }
+  };
+
   /* ---- 08 · BIG ROBOT — the original large Nexbot experience ----
      The supplied scene keeps its own lighting, composition and scale.
      Its head answers to the MOUSE (the scene's own cursor-follow is a
@@ -1104,10 +1199,13 @@
       loading = true;
       import(RB.runtime)
         .then(({ Application }) => {
+          sanitizeSplineRuntime(Application);
           app = new Application(canvas);
+          neutralizeAppWatermark(app);
           return app.load(RB.scene);
         })
         .then(() => {
+          neutralizeAppWatermark(app);
           // take the rig over so the look reads clearly, keeping the rest
           // (lighting, materials, composition, scale) exactly as supplied
           if (app.setGlobalEvents) app.setGlobalEvents(false);
@@ -1219,10 +1317,13 @@
       loading = true;
       import(SR.runtime)
         .then(({ Application }) => {
+          sanitizeSplineRuntime(Application);
           app = new Application(canvas);
+          neutralizeAppWatermark(app);
           return app.load(SR.scene);
         })
         .then(() => {
+          neutralizeAppWatermark(app);
           // the supplied scene follows the cursor through a `lookAt` event:
           // switch its document listeners off so the head is ours alone.
           if (app.setGlobalEvents) app.setGlobalEvents(false);
@@ -1555,6 +1656,13 @@
 
   /* ---- Remove any Spline watermarks / branding dynamically ---- */
   const purgeSplineWatermarks = () => {
+    if (window.__rbBig && window.__rbBig.app) {
+      neutralizeAppWatermark(window.__rbBig.app);
+    }
+    if (window.__rbSmall && window.__rbSmall.app) {
+      neutralizeAppWatermark(window.__rbSmall.app);
+    }
+
     const selectors = [
       '#spline-watermark',
       '.spline-watermark',
@@ -1563,7 +1671,11 @@
       'a[href*="spline"]',
       '[id*="spline-watermark"]',
       '[class*="spline-watermark"]',
-      '#logo'
+      '[id*="watermark"]',
+      '[class*="watermark"]',
+      '#logo',
+      'spline-viewer',
+      '[aria-label*="Spline" i]'
     ];
     document.querySelectorAll(selectors.join(',')).forEach((el) => {
       try { el.remove(); } catch (_) { el.style.display = 'none'; }
@@ -1585,4 +1697,10 @@
   if (document.body) {
     splineWatermarkObserver.observe(document.body, { childList: true, subtree: true });
   }
+
+  // Periodic safety check for asynchronous/lazy scene loads
+  const watermarkInterval = setInterval(() => {
+    purgeSplineWatermarks();
+  }, 1000);
+  setTimeout(() => clearInterval(watermarkInterval), 15000);
 })();
