@@ -17,7 +17,7 @@ const heroContent = {
 
   headline: "Pranav",
   role: ["Software Developer &", "Quality Engineer"],
-  meta: ["Full Stack", "QA & Accessibility", "IoT & AI"],
+  meta: ["Full Stack", "AI", "Creative Development", "UI/UX"],
 
   notification: {
     name: "Pranav Karthick",
@@ -220,7 +220,7 @@ const heroContent = {
       },
       what: {
         title: "What I Do",
-        sub: "Full Stack · QA & Accessibility · IoT & AI",
+        sub: "Full Stack · AI · Creative Development · UI/UX",
       },
       think: {
         title: "How I Think",
