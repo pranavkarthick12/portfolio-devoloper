@@ -1582,20 +1582,96 @@
       }));
     }
 
+    /* — SplitText initialization for footer headline — */
+    let splitChars = [];
+    if (window.SplitText) {
+      try {
+        const split = new window.SplitText(lines, {
+          type: "chars",
+          charsClass: "ft-char"
+        });
+        splitChars = split.chars || [];
+      } catch (err) {
+        console.warn("SplitText init:", err);
+      }
+    }
+
     /* — the reveal, scrubbed to scroll — */
     const clamp01 = (v) => Math.min(1, Math.max(0, v));
     const easeOut = (t) => 1 - Math.pow(1 - t, 3);
     let p = 0, pTarget = 0, raf = null, lastT = 0, lastKey = null;
 
+    // Per-char cursor interaction offsets
+    const charOffsets = splitChars.map(() => ({ currentY: 0, targetY: 0, currentScale: 1, targetScale: 1 }));
+    let lastMouseX = -9999, lastMouseY = -9999, isMouseNear = false;
+
     const render = (v) => {
       const key = v.toFixed(4);
-      if (key === lastKey) return;
-      lastKey = key;
-      lines.forEach((line, i) => {
-        const e = easeOut(clamp01((v - i * 0.12) / 0.62));
-        line.style.transform = `translate3d(0, ${((1 - e) * 108).toFixed(2)}%, 0)`;
+      if (key !== lastKey) {
+        lastKey = key;
+        style.setProperty("--ftP", v.toFixed(4));
+      }
+
+      if (splitChars.length) {
+        // Character-level scrubbed unmasking + cursor proximity offsets
+        const totalChars = splitChars.length;
+        splitChars.forEach((ch, idx) => {
+          // Stagger unmasking smoothly across progress (0.1 to 0.95 range)
+          const charProg = clamp01((v - (idx / totalChars) * 0.42) / 0.58);
+          const e = easeOut(charProg);
+          const scrollYPercent = (1 - e) * 115;
+          const off = charOffsets[idx] || { currentY: 0, currentScale: 1 };
+          ch.style.transform = `translate3d(0, calc(${scrollYPercent.toFixed(2)}% + ${off.currentY.toFixed(2)}px), 0) scale(${off.currentScale.toFixed(3)})`;
+          ch.style.opacity = Math.min(1, charProg * 1.5).toFixed(3);
+        });
+      } else {
+        lines.forEach((line, i) => {
+          const e = easeOut(clamp01((v - i * 0.12) / 0.62));
+          line.style.transform = `translate3d(0, ${((1 - e) * 108).toFixed(2)}%, 0)`;
+        });
+      }
+    };
+
+    const updateCharOffsets = () => {
+      if (!splitChars.length || !finePointer.matches) return;
+      let hasMovement = false;
+      splitChars.forEach((ch, idx) => {
+        const off = charOffsets[idx];
+        if (!off) return;
+        if (isMouseNear) {
+          const rect = ch.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const dx = lastMouseX - cx;
+          const dy = lastMouseY - cy;
+          const dist = Math.hypot(dx, dy);
+          const radius = 130;
+          if (dist < radius) {
+            const factor = Math.cos((dist / radius) * (Math.PI / 2)); // 1 at center, 0 at boundary
+            off.targetY = -18 * factor;
+            off.targetScale = 1 + 0.14 * factor;
+          } else {
+            off.targetY = 0;
+            off.targetScale = 1;
+          }
+        } else {
+          off.targetY = 0;
+          off.targetScale = 1;
+        }
+
+        const prevY = off.currentY;
+        const prevScale = off.currentScale;
+        off.currentY += (off.targetY - off.currentY) * 0.18;
+        off.currentScale += (off.targetScale - off.currentScale) * 0.18;
+
+        if (Math.abs(off.targetY - off.currentY) < 0.05) off.currentY = off.targetY;
+        if (Math.abs(off.targetScale - off.currentScale) < 0.002) off.currentScale = off.targetScale;
+
+        if (Math.abs(off.currentY - prevY) > 0.01 || Math.abs(off.currentScale - prevScale) > 0.001 || off.currentY !== 0) {
+          hasMovement = true;
+        }
       });
-      style.setProperty("--ftP", v.toFixed(4));
+      return hasMovement;
     };
 
     const step = (now) => {
@@ -1603,17 +1679,43 @@
       lastT = now;
       p += (pTarget - p) * (1 - Math.exp(-dt / 0.13));
       if (Math.abs(pTarget - p) < 0.0006) p = pTarget;
+      
+      const charActive = updateCharOffsets();
       render(p);
-      if (p === pTarget) { lastT = 0; raf = null; return; }
+
+      if (p === pTarget && !charActive) { lastT = 0; raf = null; return; }
       raf = requestAnimationFrame(step);
     };
 
     const kick = () => { if (raf === null) raf = requestAnimationFrame(step); };
 
+    const onMouseMove = (e) => {
+      lastMouseX = e.clientX;
+      lastMouseY = e.clientY;
+      const head = ftSection.querySelector(".ft-headline");
+      if (head) {
+        const hr = head.getBoundingClientRect();
+        // Check if mouse is within proximity of the headline block (padding 120px)
+        isMouseNear = (
+          lastMouseX >= hr.left - 120 &&
+          lastMouseX <= hr.right + 120 &&
+          lastMouseY >= hr.top - 120 &&
+          lastMouseY <= hr.bottom + 120
+        );
+      }
+      kick();
+    };
+
+    const onMouseLeave = () => {
+      isMouseNear = false;
+      kick();
+    };
+
+    window.addEventListener("mousemove", onMouseMove, { passive: true });
+    document.addEventListener("mouseleave", onMouseLeave);
+
     const onScroll = () => {
       const r = ftSection.getBoundingClientRect();
-      // 0 as the footer's top edge reaches the viewport bottom, 1 once
-      // it has travelled a good half-screen further up
       pTarget = clamp01((window.innerHeight - r.top) / (window.innerHeight * 0.72));
       kick();
     };
@@ -1623,7 +1725,11 @@
 
     if (reduceMotion.matches) {
       style.setProperty("--ftP", "1");
-      lines.forEach((l) => { l.style.transform = "none"; });
+      if (splitChars.length) {
+        splitChars.forEach((ch) => { ch.style.transform = "none"; ch.style.opacity = "1"; });
+      } else {
+        lines.forEach((l) => { l.style.transform = "none"; });
+      }
     } else {
       onScroll();
     }

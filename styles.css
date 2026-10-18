@@ -3252,6 +3252,12 @@ spline-viewer #logo,
 
 .ft-mask:last-child .ft-line { color: #d3382b; }
 
+.ft-line .ft-char {
+  display: inline-block;
+  will-change: transform, opacity;
+  transform-origin: 50% 100%;
+}
+
 .ft-line-note {
   margin: 2.2em 0 0;
   max-width: 44ch;
