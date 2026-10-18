@@ -191,7 +191,7 @@ const heroContent = {
       {
         title: "Profiles & Experience",
         items: [
-          { label: "Email: pranavkarthicksk@gmail.com", href: "mailto:pranavkarthicksk@gmail.com" },
+          { label: "Email: pranavkarthicksk@gmail.com", href: "https://mail.google.com/mail/?view=cm&fs=1&to=pranavkarthicksk@gmail.com" },
           { label: "Phone: +91 6381335486", href: "tel:+916381335486" },
           { label: "LinkedIn Profile", href: "https://www.linkedin.com/in/pranav-karthick-s-k-516304291?utm_source=share_via&utm_content=profile&utm_medium=member_android" },
           { label: "GitHub Profile", href: "https://github.com/pranavkarthick12" },

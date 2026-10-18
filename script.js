@@ -1549,9 +1549,18 @@
     setSlot("ft-note", copy.note);
     setSlot("ft-top", copy.backToTop);
 
+    const gmailComposeUrl = copy.email
+      ? `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(copy.email)}`
+      : "";
+
     if (mail) {
-      if (copy.email) mail.setAttribute("href", `mailto:${copy.email}`);
-      else mail.remove();
+      if (copy.email) {
+        mail.setAttribute("href", gmailComposeUrl);
+        mail.setAttribute("target", "_blank");
+        mail.setAttribute("rel", "noopener noreferrer");
+      } else {
+        mail.remove();
+      }
     }
 
     /* link columns (+ an "Elsewhere" column only if social links exist) */
