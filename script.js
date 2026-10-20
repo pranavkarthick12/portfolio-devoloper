@@ -412,7 +412,9 @@
         label.style.transform =
           `translate3d(${dx.toFixed(1)}px, ${dy.toFixed(1)}px, 0) ` +
           `rotate(${rot.toFixed(2)}deg) scale(${scale.toFixed(4)})`;
-        label.style.filter = e < 0.985 ? `blur(${((1 - e) * 5).toFixed(2)}px)` : "";
+        if (!isMobileLayout()) {
+          label.style.filter = e < 0.985 ? `blur(${((1 - e) * 5).toFixed(2)}px)` : "";
+        }
       });
     };
 
@@ -510,7 +512,7 @@
           `translate3d(${dx.toFixed(1)}px, ${dy.toFixed(1)}px, 0) ` +
           `rotate(${(cfg.rot * e).toFixed(2)}deg) scale(${sc.toFixed(3)})`;
         el.style.opacity = (1 - easeOut(sub(e, 0.62, 1))).toFixed(3);
-        if (cfg.inv) {
+        if (cfg.inv && !isMobileLayout()) {
           const k = sub(pt, cfg.s * 0.7, cfg.s * 0.95);
           el.style.filter = k > 0.002 ? `grayscale(${k.toFixed(2)}) invert(${k.toFixed(2)})` : "";
         }
@@ -1202,6 +1204,14 @@
           sanitizeSplineRuntime(Application);
           app = new Application(canvas);
           neutralizeAppWatermark(app);
+          // On mobile, cap device pixel ratio to 1.0 to eliminate GPU fillrate bottlenecks
+          if (window.innerWidth <= 720 || !finePointer.matches) {
+            try {
+              if (app._renderer && app._renderer.setPixelRatio) {
+                app._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+              }
+            } catch (_) {}
+          }
           return app.load(RB.scene);
         })
         .then(() => {
@@ -1320,6 +1330,14 @@
           sanitizeSplineRuntime(Application);
           app = new Application(canvas);
           neutralizeAppWatermark(app);
+          // On mobile, cap device pixel ratio to 1.0 to eliminate GPU fillrate bottlenecks
+          if (window.innerWidth <= 720 || !finePointer.matches) {
+            try {
+              if (app._renderer && app._renderer.setPixelRatio) {
+                app._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+              }
+            } catch (_) {}
+          }
           return app.load(SR.scene);
         })
         .then(() => {
@@ -1809,13 +1827,14 @@
   const splineWatermarkObserver = new MutationObserver(() => {
     purgeSplineWatermarks();
   });
-  if (document.body) {
-    splineWatermarkObserver.observe(document.body, { childList: true, subtree: true });
-  }
+  const rbStage = document.querySelector('.rb-stage') || document.querySelector('.rb');
+  const srStage = document.querySelector('.sr-stage') || document.querySelector('.sr');
+  if (rbStage) splineWatermarkObserver.observe(rbStage, { childList: true, subtree: true });
+  if (srStage) splineWatermarkObserver.observe(srStage, { childList: true, subtree: true });
 
   // Periodic safety check for asynchronous/lazy scene loads
   const watermarkInterval = setInterval(() => {
     purgeSplineWatermarks();
-  }, 1000);
-  setTimeout(() => clearInterval(watermarkInterval), 15000);
+  }, 1200);
+  setTimeout(() => clearInterval(watermarkInterval), 10000);
 })();
